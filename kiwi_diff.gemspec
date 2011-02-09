@@ -21,6 +21,10 @@ Gem::Specification.new do |s|
 
   s.files        = Dir.glob("lib/**/*") + %w(README.rdoc)
   s.require_path = 'lib'
+  s.bindir = 'bin'
+  s.executables = Dir.glob('bin/*').map {|x| File.basename x}
+  s.default_executable = 'kiwi_diff'
+
   s.post_install_message = <<-POST_INSTALL_MESSAGE
   ____
 /@    ~-.
