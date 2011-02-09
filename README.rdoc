@@ -1,0 +1,34 @@
+
+= kiwi_diff
+
+* Duncan Mac-Vicar P. <dmacvicar@suse.de>
+
+== Introduction
+
+kiwi_diff is a tool to see the differences between various configuration
+of images created using the KIWI imaging tool (http://kiwi.berlios.de/).
+
+KIWI does support profiles to maintain various flavors from the same
+description, but the openSUSE build service does not play well with those.
+
+== Usage
+
+    $ cd MyProject:MyImages
+    $ ls
+
+    superSUSE-XEN superSUSE-VMX superSUSE_withPacman-XEN
+
+Running kiwi_diff superSUSE will look for the common between all matching
+the "superSUSE" in their name, and show the differences of each relative to
+what they have in common.
+
+To compare them all against a specific one, use --base NAME
+
+You can use regexps:
+
+    kiwi_diff 'superSUSE.*XEN'
+
+== License
+
+* MIT license. See the LICENSE file
+

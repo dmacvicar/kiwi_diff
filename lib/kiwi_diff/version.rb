@@ -1,0 +1,3 @@
+module KiwiDiff
+  VERSION="0.1"
+end

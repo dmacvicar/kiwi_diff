@@ -1,0 +1,99 @@
+#!/usr/bin/env ruby
+$: << File.join(File.dirname(__FILE__), "..", "lib")
+require 'rexml/document'
+require 'set'
+require 'pp'
+require 'rubygems'
+require'colorize'
+require 'trollop'
+require 'kiwi_diff/version'
+
+opts = Trollop::options do
+  version KiwiDiff::VERSION
+  banner <<-EOS
+  KIWI appliance project diff utility.
+  Author: <dmacvicar@suse.de>
+
+  Usage:
+  kiwi_diff [options] <dir regexp>
+  Example: kiwi_diff --base openSUSE-CD-VMX 'openSUSE.*-ISO'
+  EOS
+  opt :base, "Use given appliance as base to compare", :type => :string
+end
+
+packages = Hash.new
+repositories = Hash.new
+
+STDERR.puts "No appliances specified. Trying all in directory".light_white if not ARGV[0]
+
+Dir.glob(File.join(Dir.pwd,'*')).collect {|x| File.basename(x) }.each do |dir|
+  # use a filter if specified
+  if ARGV[0]
+    next if not dir =~ /#{ARGV[0]}/
+  end
+  next if not File.directory?(dir)
+  next if dir =~ /_product:/
+  Dir.chdir(dir) do
+    # look for kiwi descriptions
+    descrs = (Dir.glob("*.kiwi").to_set + Dir.glob("*.xml").to_set)
+    if descrs.empty?
+      STDERR.puts "#{dir} has no kiwi description, skipping".red
+      next
+    end
+    descr = descrs.first
+    packages[dir] = Set.new
+    repositories[dir] = Set.new
+    doc = REXML::Document.new(File.open(descr))
+
+    doc.elements.each("//packages/package") do |element|
+      packages[dir].add element.attributes['name']
+    end
+
+    doc.elements.each("//repository/source") do |element|
+      repositories[dir].add element.attributes['path']
+    end
+
+  end
+end
+
+if opts[:base]
+  if not packages.has_key?(opts[:base])
+    raise "Unknown appliance #{opts[:base]} as base. Use one of #{packages.keys.join(",")}"
+  end
+
+  common_packages = packages[opts[:base]]
+  common_repos = repositories[opts[:base]]
+else
+  common_packages = packages.values.inject(:intersection)
+  common_repos = repositories.values.inject(:intersection)
+end
+
+packages.each do |k,v|
+  puts "#{k}".light_yellow
+
+  # Compare packages
+  diff1 = (v - common_packages)
+  diff2 = (common_packages - v)
+  puts "  packages:".light_cyan if not (diff1.empty? && diff2.empty?)
+  diff1.sort.each do |pkg|
+    puts "    + #{pkg}".light_green
+  end
+  diff2.sort.each do |pkg|
+    puts "    - #{pkg}".light_red
+  end
+
+  # repositories
+  diff1 = (repositories[k] - common_repos)
+  diff2 = (common_repos - repositories[k])
+
+  puts "  repos:".light_cyan if not (diff1.empty? && diff2.empty?)
+  diff1.sort.each do |repo|
+    puts "    + #{repo}".light_green
+  end
+  diff2.sort.each do |repo|
+    puts "    - #{repo}".light_red
+  end
+
+
+end
+
