@@ -6,6 +6,10 @@ require 'pp'
 require 'rubygems'
 require'colorize'
 require 'trollop'
+require 'digest/sha1'
+require 'archive/tar/minitar'
+require 'bzip2-ruby'
+require 'stringio'
 require 'kiwi_diff/version'
 
 opts = Trollop::options do
@@ -19,18 +23,32 @@ opts = Trollop::options do
   Example: kiwi_diff --base openSUSE-CD-VMX 'openSUSE.*-ISO'
   EOS
   opt :base, "Use given appliance as base to compare", :type => :string
+  opt :debug, "Debug mode", :type => :boolean
 end
 
 packages = Hash.new
 repositories = Hash.new
+root_checksums = Hash.new
+root_file_checksums = Hash.new
+root_files = Hash.new
 
 STDERR.puts "No appliances specified. Trying all in directory".light_white if not ARGV[0]
 
-Dir.glob(File.join(Dir.pwd,'*')).collect {|x| File.basename(x) }.each do |dir|
+appliances = Dir.glob(File.join(Dir.pwd,'*')).collect {|x| File.basename(x) }
+
+appliances.each do |dir|
+
   # use a filter if specified
-  if ARGV[0]
-    next if not dir =~ /#{ARGV[0]}/
+  unless opts[:base] == dir
+    if ARGV[0]
+      unless dir =~ /#{ARGV[0]}/
+        STDERR.puts "#{dir} skipped".red
+        STDERR.puts "'#{dir}' '#{ARGV[0]}' '#{dir =~ /#{ARGV[0]}/}'"
+        next
+      end
+    end
   end
+
   next if not File.directory?(dir)
   next if dir =~ /_product:/
   Dir.chdir(dir) do
@@ -43,6 +61,10 @@ Dir.glob(File.join(Dir.pwd,'*')).collect {|x| File.basename(x) }.each do |dir|
     descr = descrs.first
     packages[dir] = Set.new
     repositories[dir] = Set.new
+    root_files[dir] = Set.new
+    root_file_checksums[dir] = Set.new
+
+    STDERR.puts "Reading KIWI descriptions for #{dir}".light_white
     doc = REXML::Document.new(File.open(descr))
 
     doc.elements.each("//packages/package") do |element|
@@ -53,19 +75,38 @@ Dir.glob(File.join(Dir.pwd,'*')).collect {|x| File.basename(x) }.each do |dir|
       repositories[dir].add element.attributes['path']
     end
 
+    STDERR.puts "Reading rootfs for #{dir}".light_white
+    if File.exist?("root.tar.bz2")
+      root_checksums[dir] = Digest::SHA1.file("root.tar.bz2")
+      bzreader = Bzip2::Reader.new(File.new('root.tar.bz2'))
+      tar = Archive::Tar::Minitar::Reader.new(StringIO.new(bzreader.read))
+      tar.each_entry do |entry|
+        checksum = case
+          when entry.file? then Digest::SHA1.hexdigest(entry.read)
+          else "<dir>"
+        end
+        root_files[dir].add("#{entry.full_name}")
+        root_file_checksums[dir].add("#{entry.full_name}|#{checksum}")
+      end
+    end
+
   end
 end
 
 if opts[:base]
-  if not packages.has_key?(opts[:base])
-    raise "Unknown appliance #{opts[:base]} as base. Use one of #{packages.keys.join(",")}"
+  if not appliances.include?(opts[:base])
+    raise "Unknown appliance #{opts[:base]} as base. Use one of #{appliances.join(",")}"
   end
 
   common_packages = packages[opts[:base]]
   common_repos = repositories[opts[:base]]
+  common_root_files = root_files[opts[:base]]
+  common_root_file_checksums = root_file_checksums[opts[:base]]
 else
   common_packages = packages.values.inject(:intersection)
   common_repos = repositories.values.inject(:intersection)
+  common_root_files = root_files.values.inject(:intersection)
+  common_root_file_checksums = root_file_checksums.values.inject(:intersection)
 end
 
 packages.each do |k,v|
@@ -94,6 +135,23 @@ packages.each do |k,v|
     puts "    - #{repo}".light_red
   end
 
+  # root tarball
+  diff1 = (root_files[k] - common_root_files)
+  diff2 = (common_root_files - root_files[k])
 
+  puts "  root files:".light_cyan if not (diff1.empty? && diff2.empty?)
+  diff1.sort.each do |file|
+    puts "    + #{file}".light_green
+  end
+  diff2.sort.each do |file|
+    puts "    - #{file}".light_red
+  end
+
+  diff1 = (root_file_checksums[k] - common_root_file_checksums)
+  diff2 = (common_root_file_checksums - root_file_checksums[k])
+
+  modified = diff1.map { |x| x.split("|")[0] }.to_set + diff2.map { |x| x.split("|")[0] }.to_set
+  modified.sort.each do |file|
+    puts "    * #{file}".light_magenta
+  end
 end
-

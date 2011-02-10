@@ -16,6 +16,7 @@ Gem::Specification.new do |s|
 
   s.add_dependency("colorize")
   s.add_dependency("trollop")
+  s.add_dependency("archive-tar-minitar")
 
   s.add_development_dependency("bundler", [">= 1.0"])
 
